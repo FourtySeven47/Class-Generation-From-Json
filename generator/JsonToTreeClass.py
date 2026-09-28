@@ -2363,7 +2363,14 @@ def _expand_config_shortcuts(kwargs):
 
 
 def config(**kwargs):
-    return _construct(Root, **_expand_config_shortcuts(kwargs))
+    values = dict(kwargs)
+    if "model" in values:
+        model_builder = values.pop("model")
+        builder_config = getattr(model_builder, "config", None)
+        if not callable(builder_config):
+            raise TypeError("config(model=...) requires a model builder with config()")
+        return builder_config(**values)
+    return _construct(Root, **_expand_config_shortcuts(values))
 
 
 def model(**kwargs):

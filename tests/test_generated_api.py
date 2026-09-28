@@ -214,12 +214,14 @@ class GeneratedApiTests(unittest.TestCase):
         body = model.mesh(mesh="beam.msh")
         body.material(api_module.neo_hookean(E=20.0, nu=0.45))
 
-        cfg = api_module.config(
+        explicit_cfg = api_module.config(
             geometry=model.geometry(),
             materials=model.materials(),
         )
+        cfg = api_module.config(model=model)
 
         self.assertIs(model.__class__, api_module.ModelBuilder)
+        self.assertEqual(explicit_cfg.as_dict(), cfg.as_dict())
         self.assertEqual(1, cfg.as_dict()["geometry"][0]["volume_selection"])
         self.assertEqual(1, cfg.as_dict()["materials"][0]["id"])
         self.assertNotIn("uuid", repr(cfg.as_dict()))
