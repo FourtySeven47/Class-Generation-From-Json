@@ -853,6 +853,74 @@ class ModelBuilderTests(unittest.TestCase):
         self.assertNotIn("output", cfg)
         self.assertNotIn("solver", cfg)
 
+    def test_body_mesh_matches_legacy_model_mesh_without_mutating_descriptor(self):
+        model_builder = import_from_generator(
+            MODEL_BUILDER_PATH,
+            "model_builder_body_mesh",
+        )
+        api = FakeGeneratedApi()
+
+        legacy_model = model_builder.ModelBuilder(
+            api,
+            relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
+        )
+        legacy_body = legacy_model.mesh(mesh="beam.msh")
+        legacy_body.material(api.neo_hookean(E=20.0, nu=0.45))
+        legacy_body.surface_axis(axis=1, position=0.5).dirichlet(value=[0, 0])
+        legacy_cfg = legacy_model.config(rhs=[0, 0])
+
+        new_model = model_builder.ModelBuilder(
+            api,
+            relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
+        )
+        mesh_descriptor = api.mesh(mesh="beam.msh")
+        body = new_model.body()
+        body.mesh(mesh_descriptor)
+        body.material(api.neo_hookean(E=20.0, nu=0.45))
+        body.surface_axis(axis=1, position=0.5).dirichlet(value=[0, 0])
+        new_model.rhs([0, 0])
+        new_cfg = new_model.config()
+
+        self.assertEqual(legacy_cfg, new_cfg)
+        self.assertEqual({"mesh": "beam.msh"}, mesh_descriptor)
+
+    def test_body_requires_mesh_before_body_or_surface_bindings(self):
+        model_builder = import_from_generator(
+            MODEL_BUILDER_PATH,
+            "model_builder_body_requires_mesh",
+        )
+        model = model_builder.ModelBuilder(
+            FakeGeneratedApi(),
+            relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
+        )
+        body = model.body()
+
+        with self.assertRaisesRegex(ValueError, "body.mesh"):
+            body.material({"type": "NeoHookean", "E": 20.0, "nu": 0.45})
+        with self.assertRaisesRegex(ValueError, "body.mesh"):
+            body.surface_all(id=1)
+
+    def test_model_rhs_rejects_duplicate_config_rhs_sources(self):
+        model_builder = import_from_generator(
+            MODEL_BUILDER_PATH,
+            "model_builder_rhs_duplicate_sources",
+        )
+        model = model_builder.ModelBuilder(
+            FakeGeneratedApi(),
+            relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
+        )
+
+        model.rhs([0, 0])
+
+        with self.assertRaisesRegex(TypeError, "rhs"):
+            model.config(rhs=[1, 1])
+        with self.assertRaisesRegex(TypeError, "rhs"):
+            model.config(boundary_conditions={"rhs": [1, 1]})
+
     def test_model_config_preserves_explicit_solver(self):
         model_builder = import_from_generator(
             MODEL_BUILDER_PATH,

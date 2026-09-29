@@ -2378,6 +2378,13 @@ def model(**kwargs):
     if api_module is None:
         api_module = _GeneratedApiProxy(globals())
     return ModelBuilder(api_module, **kwargs)
+
+
+def body(*, model, **kwargs):
+    builder_body = getattr(model, "body", None)
+    if not callable(builder_body):
+        raise TypeError("body(model=...) requires a model builder with body()")
+    return builder_body(**kwargs)
 {factories}
 {shortcut_factories}'''
 

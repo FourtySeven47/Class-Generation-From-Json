@@ -226,6 +226,16 @@ class GeneratedApiTests(unittest.TestCase):
         self.assertEqual(1, cfg.as_dict()["materials"][0]["id"])
         self.assertNotIn("uuid", repr(cfg.as_dict()))
 
+        new_model = api_module.model(relationships=relationships)
+        new_body = api_module.body(model=new_model)
+        mesh_descriptor = api_module.mesh(mesh="beam.msh")
+        new_body.mesh(mesh_descriptor)
+        new_body.material(api_module.neo_hookean(E=20.0, nu=0.45))
+        new_cfg = api_module.config(model=new_model)
+
+        self.assertEqual(cfg.as_dict(), new_cfg.as_dict())
+        self.assertNotIn("volume_selection", mesh_descriptor.as_dict())
+
     def test_generated_api_prefers_short_name_for_shallow_collision(self):
         generator = import_generator("json_to_tree_generated_api_names")
         names = generator.generated_api_name_map([

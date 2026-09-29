@@ -56,9 +56,24 @@ class ModelBuilder:
         self._mesh_by_uuid = {}
         self._consumer_lists = {}
         self._selection_backend_id_by_signature = {}
+        self._rhs = _MISSING
 
     def mesh(self, **kwargs):
-        values = dict(kwargs)
+        body = self.body()
+        return body.mesh(dict(kwargs))
+
+    def body(self):
+        return BodyHandle(self)
+
+    def rhs(self, value):
+        if self._rhs is not _MISSING:
+            raise TypeError("rhs already configured on this model")
+        self._rhs = _copy_payload(value)
+        return self
+
+    def _register_body_mesh(self, payload):
+        values = _payload_dict(payload)
+        values = _copy_payload(values)
         mesh_uuid = str(uuid.uuid4())
         volume_ref = self._selection_pool.allocate(
             "volume",
@@ -69,7 +84,7 @@ class ModelBuilder:
         mesh_object = self._api.mesh(**values)
         self._geometry.append(mesh_object)
         self._mesh_by_uuid[mesh_uuid] = mesh_object
-        return BodyHandle(self, mesh_uuid, volume_ref)
+        return mesh_uuid, volume_ref
 
     def mesh_array(self, **kwargs):
         return self._geometry_item("mesh_array", **kwargs)
@@ -160,6 +175,12 @@ class ModelBuilder:
     def config(self, **kwargs):
         values = dict(kwargs)
         rhs = values.pop("rhs", _MISSING)
+        if self._rhs is not _MISSING:
+            if rhs is not _MISSING:
+                raise TypeError(
+                    "Use either model.rhs(...) or config(rhs=...), not both"
+                )
+            rhs = self._rhs
 
         if "geometry" not in values:
             values["geometry"] = self.geometry()
@@ -390,10 +411,19 @@ class GeometryHandle:
 
 
 class BodyHandle:
-    def __init__(self, model, mesh_uuid, volume_ref):
+    def __init__(self, model, mesh_uuid=None, volume_ref=None):
         self._model = model
         self.mesh_uuid = mesh_uuid
         self.volume_ref = volume_ref
+
+    def mesh(self, *args, **kwargs):
+        if self.mesh_uuid is not None:
+            raise ValueError("body.mesh(...) was already configured")
+        payload = _bind_payload_from_call("body.mesh", args, kwargs)
+        mesh_uuid, volume_ref = self._model._register_body_mesh(payload)
+        self.mesh_uuid = mesh_uuid
+        self.volume_ref = volume_ref
+        return self
 
     def __getattr__(self, name):
         if name.startswith("_"):
@@ -410,6 +440,7 @@ class BodyHandle:
             )
 
         def bind_value(*args, **kwargs):
+            self._require_mesh()
             value = _bind_payload_from_call(builder_api, args, kwargs)
             self._model.bind(builder_api, self.volume_ref, value)
             return self
@@ -417,11 +448,16 @@ class BodyHandle:
         bind_value.__name__ = name
         return bind_value
 
+    def _require_mesh(self):
+        if self.mesh_uuid is None or self.volume_ref is None:
+            raise ValueError("body.mesh(...) must be called before configuring body")
+
     def _dynamic_selection_helper(self, name):
         if not self._model.has_selection_helper(name):
             return None
 
         def add_selection(*args, **kwargs):
+            self._require_mesh()
             if args:
                 raise TypeError("%s accepts keyword fields only" % name)
             append = kwargs.pop("append", True)
@@ -436,6 +472,7 @@ class BodyHandle:
         return add_selection
 
     def surface_all(self, *, id=None):
+        self._require_mesh()
         payload = {"id": id} if id is not None else {}
         return self._model._add_surface_selection(
             self.mesh_uuid,
