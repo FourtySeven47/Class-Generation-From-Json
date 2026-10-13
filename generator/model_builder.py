@@ -66,6 +66,8 @@ class ModelBuilder:
         return BodyHandle(self)
 
     def rhs(self, value):
+        if self._consumer_lists.get(("boundary_conditions", "rhs")):
+            raise TypeError("Use either model.rhs(...) or body.rhs(...), not both")
         if self._rhs is not _MISSING:
             raise TypeError("rhs already configured on this model")
         self._rhs = _copy_payload(value)
@@ -162,6 +164,8 @@ class ModelBuilder:
     def boundary_conditions(self, **kwargs):
         section = dict(kwargs)
         for key, items in self._consumer_section(("boundary_conditions",)).items():
+            if key == "rhs" and key in section:
+                raise TypeError("Use either body.rhs(...) or explicit rhs, not both")
             if key in section and section[key]:
                 if not isinstance(section[key], list):
                     raise ValueError(
@@ -313,6 +317,11 @@ class ModelBuilder:
         payload = _payload_dict(value)
         payload[id_field] = selection_ref.backend_id
         items = self._consumer_lists.setdefault(consumer_path, [])
+        if consumer_path == ("boundary_conditions", "rhs"):
+            if self._rhs is not _MISSING:
+                raise TypeError("Use either model.rhs(...) or body.rhs(...), not both")
+            if any(item[id_field] == payload[id_field] for item in items):
+                raise TypeError("rhs already configured for this body ID")
         if payload not in items:
             items.append(payload)
         return payload
