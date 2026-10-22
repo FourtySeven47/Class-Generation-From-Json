@@ -2091,6 +2091,18 @@ def {api_name}(*args, **kwargs):
 """
         )
 
+    builder_methods = []
+    for path, node in class_entries:
+        if len(path) != 2:
+            continue
+        name = py_function_name(node.name)
+        builder_methods.append(f"""
+    if not hasattr(_BaseModelBuilder, {name!r}):
+        def {name}(self, **kwargs):
+            return self._set_config_section({node.name!r}, _construct({api_class_expr(path)}, **kwargs))
+""")
+    builder_class = "class ModelBuilder(_BaseModelBuilder):\n    pass\n" + "".join(builder_methods)
+
     field_wrappers_text = generated_api_field_wrapper_text(class_entries)
     field_aliases_text = generated_api_field_aliases_text(class_entries)
     list_direct_primitive_types_text = generated_api_list_direct_primitive_types_text(class_entries)
@@ -2186,7 +2198,9 @@ def _load_model_builder():
     )
 
 
-ModelBuilder = _load_model_builder()
+_BaseModelBuilder = _load_model_builder()
+
+{builder_class}
 
 
 class _GeneratedApiProxy:
@@ -2209,6 +2223,9 @@ _CLASS_TYPE_NAMES = {class_type_names_text}
 
 
 def _construct(cls, *args, **kwargs):
+    if kwargs and not args and cls in _POLYMORPHIC_VARIANTS:
+        variants = _POLYMORPHIC_VARIANTS[cls]
+        return cls(_construct(_select_variant(kwargs, variants), **kwargs))
     if kwargs:
         type_name = _CLASS_TYPE_NAMES.get(cls)
         if type_name is not None and "type" not in kwargs:

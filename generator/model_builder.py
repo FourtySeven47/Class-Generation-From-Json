@@ -57,6 +57,7 @@ class ModelBuilder:
         self._consumer_lists = {}
         self._selection_backend_id_by_signature = {}
         self._rhs = _MISSING
+        self._config_sections = {}
 
     def mesh(self, **kwargs):
         body = self.body()
@@ -176,8 +177,16 @@ class ModelBuilder:
                 section[key] = list(items)
         return section
 
+    def _set_config_section(self, name, value):
+        self._config_sections[name] = value
+        return self
+
     def config(self, **kwargs):
-        values = dict(kwargs)
+        duplicates = self._config_sections.keys() & kwargs.keys()
+        if duplicates:
+            raise TypeError("Configuration already set on model: %s" % ", ".join(sorted(duplicates)))
+        values = dict(self._config_sections)
+        values.update(kwargs)
         rhs = values.pop("rhs", _MISSING)
         if self._rhs is not _MISSING:
             if rhs is not _MISSING:

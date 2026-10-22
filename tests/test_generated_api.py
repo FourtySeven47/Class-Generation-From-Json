@@ -133,6 +133,19 @@ class GeneratedApiTests(unittest.TestCase):
         )
 
         self.assertEqual(direct.as_dict(), via_api.as_dict())
+        self.assertEqual(
+            direct.as_dict()["time"],
+            api_module.time(tend=0.02, dt=0.01).as_dict(),
+        )
+        model = api_module.model(relationships=[])
+        self.assertIs(model.time(tend=0.02, dt=0.01), model)
+        built = model.config(geometry=via_api.geometry, materials=via_api.materials)
+        self.assertEqual(direct.as_dict(), built.as_dict())
+        with self.assertRaises(TypeError):
+            model.config(time=api_module.time(tend=0.03, dt=0.01))
+        with self.assertRaises(TypeError):
+            api_module.time(dt=0.01)
+
 
     def test_generated_api_exposes_model_builder_factory(self):
         generator = import_generator("json_to_tree_generated_api_model_builder")
