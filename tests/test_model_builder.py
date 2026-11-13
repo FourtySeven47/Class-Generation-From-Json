@@ -561,7 +561,7 @@ class ModelBuilderTests(unittest.TestCase):
             model.boundary_conditions(),
         )
 
-    def test_matching_surface_helpers_share_id_and_dedupe_boundary_binding(self):
+    def test_matching_surface_helpers_on_different_meshes_bind_independently(self):
         model_builder = import_from_generator(
             MODEL_BUILDER_PATH,
             "model_builder_matching_surface_boundary",
@@ -577,7 +577,7 @@ class ModelBuilderTests(unittest.TestCase):
         ball_fixed = ball.surface_axis(axis=1, position=0.1025)
         wall_fixed = wall.surface_axis(axis=1, position=0.1025)
         ball_fixed.dirichlet(value=[0, 0])
-        wall_fixed.dirichlet(value=[0, 0])
+        wall_fixed.dirichlet(value=[1, 0])
 
         self.assertEqual(
             [
@@ -592,7 +592,7 @@ class ModelBuilderTests(unittest.TestCase):
                     "mesh": "wall.obj",
                     "volume_selection": 2,
                     "surface_selection": [
-                        {"id": 1, "axis": 1, "position": 0.1025},
+                        {"id": 2, "axis": 1, "position": 0.1025},
                     ],
                 },
             ],
@@ -600,7 +600,7 @@ class ModelBuilderTests(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "dirichlet_boundary": [{"value": [0, 0], "id": 1}],
+                "dirichlet_boundary": [{"value": [0, 0], "id": 1}, {"value": [1, 0], "id": 2}],
             },
             model.boundary_conditions(),
         )
