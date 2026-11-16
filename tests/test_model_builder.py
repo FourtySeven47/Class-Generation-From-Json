@@ -421,7 +421,7 @@ class ModelBuilderTests(unittest.TestCase):
         )
         self.assertEqual(
             [
-                {"mesh": "sphere.msh", "volume_selection": 1},
+                {"mesh": "sphere.msh"},
                 {"mesh": "cube.msh", "volume_selection": 2},
             ],
             model.geometry(),
@@ -468,7 +468,6 @@ class ModelBuilderTests(unittest.TestCase):
             [
                 {
                     "mesh": "wall.obj",
-                    "volume_selection": 1,
                     "surface_selection": [
                         {"id": 1, "axis": 1, "position": 0.1025},
                         {"id": 2, "axis": -1, "position": -0.1025},
@@ -499,7 +498,7 @@ class ModelBuilderTests(unittest.TestCase):
             relationships=POLYFEM_RELATIONSHIPS,
             selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
         )
-        wall = model.geometry_mesh(mesh="wall.obj")
+        wall = model.mesh(mesh="wall.obj")
 
         fixed = wall.surface_all(id=3)
         fixed.dirichlet(value=[0, 0])
@@ -544,7 +543,6 @@ class ModelBuilderTests(unittest.TestCase):
             [
                 {
                     "mesh": "wall.obj",
-                    "volume_selection": 1,
                     "surface_selection": {
                         "id": 3,
                         "axis": "-y",
@@ -583,14 +581,12 @@ class ModelBuilderTests(unittest.TestCase):
             [
                 {
                     "mesh": "ball.obj",
-                    "volume_selection": 1,
                     "surface_selection": [
                         {"id": 1, "axis": 1, "position": 0.1025},
                     ],
                 },
                 {
                     "mesh": "wall.obj",
-                    "volume_selection": 2,
                     "surface_selection": [
                         {"id": 2, "axis": 1, "position": 0.1025},
                     ],
@@ -626,7 +622,6 @@ class ModelBuilderTests(unittest.TestCase):
             [
                 {
                     "mesh": "body.obj",
-                    "volume_selection": 1,
                     "surface_selection": [
                         {"id": 1, "axis": 1, "position": 0.5},
                     ],
@@ -699,7 +694,6 @@ class ModelBuilderTests(unittest.TestCase):
             [
                 {
                     "mesh": "body.obj",
-                    "volume_selection": 1,
                     "surface_selection": [
                         {"id": 1, "radius": 0.01},
                     ],

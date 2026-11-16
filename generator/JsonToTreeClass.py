@@ -2101,6 +2101,16 @@ def {api_name}(*args, **kwargs):
         def {name}(self, **kwargs):
             return self._set_config_section({node.name!r}, _construct({api_class_expr(path)}, **kwargs))
 """)
+    for entry in export_plan:
+        if not entry["exported"]:
+            continue
+        path = class_paths[entry["class_path"]]
+        if len(path) == 3 and path[1] == "Geometry":
+            name = entry["api_custom_name"] or entry["api_generated_name"]
+            builder_methods.append(f"""
+    def {name}(self, **kwargs):
+        return self._geometry_item({name!r}, **kwargs)
+""")
     builder_class = "class ModelBuilder(_BaseModelBuilder):\n    pass\n" + "".join(builder_methods)
 
     field_wrappers_text = generated_api_field_wrapper_text(class_entries)

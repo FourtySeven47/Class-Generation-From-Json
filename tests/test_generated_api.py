@@ -147,6 +147,28 @@ class GeneratedApiTests(unittest.TestCase):
             api_module.time(dt=0.01)
 
 
+    def test_model_geometry_methods_follow_new_spec_types(self):
+        generator = import_generator("json_to_tree_new_geometry")
+        root = generator.build_tree([
+            {"pointer": "/", "type": "object", "required": ["geometry"]},
+            {"pointer": "/geometry", "type": "list"},
+            {
+                "pointer": "/geometry/*", "type": "object", "type_name": "VoxelMesh",
+                "required": ["type", "mesh"], "optional": ["is_obstacle"],
+            },
+            {"pointer": "/geometry/*/type", "type": "string", "options": ["VoxelMesh"]},
+            {"pointer": "/geometry/*/mesh", "type": "string"},
+            {"pointer": "/geometry/*/is_obstacle", "type": "bool"},
+        ])
+        generated = module_from_generated_text(generator.generated_class_text(root))
+        api = module_from_generated_api_text(generator.generated_api_text(root), generated.Root)
+        model = api.model(relationships=[], selection_helper_rules={})
+        model.voxel_mesh(mesh="grid.mesh", is_obstacle=True)
+        self.assertEqual(
+            [api.voxel_mesh(mesh="grid.mesh", is_obstacle=True).as_dict()],
+            model.config().as_dict()["geometry"],
+        )
+
     def test_generated_api_exposes_model_builder_factory(self):
         generator = import_generator("json_to_tree_generated_api_model_builder")
         root = generator.build_tree([
