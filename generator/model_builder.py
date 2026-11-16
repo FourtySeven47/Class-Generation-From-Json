@@ -83,6 +83,7 @@ class ModelBuilder:
         ):
             raise ValueError("body.mesh requires a deformable mesh with a single volume group")
         body = self._geometry_item("mesh", **values)
+        assert isinstance(body, BodyHandle)
         return body.mesh_uuid, body.volume_ref
 
     def _geometry_item(self, factory_name, *, same_volume_as=None, **kwargs):
@@ -93,6 +94,7 @@ class ModelBuilder:
             if "volume_selection" in values or values.get("is_obstacle"):
                 raise ValueError("Specify one volume group on a deformable geometry")
             same_volume_as._require_mesh()
+            assert same_volume_as.volume_ref is not None
             values["volume_selection"] = same_volume_as.volume_ref.backend_id
 
         geometry_object = getattr(self._api, factory_name)(**values)
@@ -509,6 +511,7 @@ class BodyHandle:
     def _bind_volume(self):
         self._require_mesh()
         geometry = self._model._mesh_by_uuid[self.mesh_uuid]
+        assert self.volume_ref is not None
         _set_payload_field(geometry, "volume_selection", self.volume_ref.backend_id)
 
     def _require_mesh(self):

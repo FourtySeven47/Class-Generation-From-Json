@@ -26,3 +26,7 @@ examples = [
     "basic_generation/*.json",
     "config_capabilities/*.json",
 ]
+
+[tool.pyright]
+include = ["generator", "tools", "validators", "tests", "examples"]
+extraPaths = ["generator", "tests"]

@@ -16,6 +16,7 @@ def import_from_generator(path, module_name):
     sys.path.insert(0, str(GENERATOR_DIR))
     try:
         spec = importlib.util.spec_from_file_location(module_name, path)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -24,6 +25,8 @@ def import_from_generator(path, module_name):
 
 
 class FakeGeneratedApi:
+    __file__: str
+
     def config(self, **kwargs):
         return dict(kwargs)
 
