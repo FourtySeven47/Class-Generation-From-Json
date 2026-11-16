@@ -149,7 +149,6 @@ generator/      Generator core and generic helper code.
 tools/          Generation and verification workflow CLI entry points.
 validators/     Reusable validation logic imported by tools and tests.
 tests/          Generator, generated API, builder, and validator tests.
-doc/            Local design notes and handoff documents.
 ```
 
 ## License
