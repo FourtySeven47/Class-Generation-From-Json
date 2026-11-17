@@ -194,6 +194,48 @@ class SelectionPoolTests(unittest.TestCase):
 
 
 class ModelBuilderTests(unittest.TestCase):
+    def test_boundary_settings_persist_and_keep_the_dictionary_api(self):
+        builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_settings")
+        model = builder.ModelBuilder(
+            FakeGeneratedApi(), relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules={},
+        )
+        model.mesh(mesh="part.msh").surface_all().dirichlet(value=[0, 0])
+        boundary = model.boundary_conditions(rhs=[0, -1])
+        self.assertIsInstance(boundary, dict)
+        self.assertEqual(boundary, model.config()["boundary_conditions"])
+        self.assertEqual(model.config(), model.config(boundary_conditions=boundary))
+        self.assertEqual(1, len(model.config()["boundary_conditions"]["dirichlet_boundary"]))
+        model.boundary_conditions(rhs=[0, -2])
+        self.assertEqual([0, -2], model.config()["boundary_conditions"]["rhs"])
+
+    def test_config_does_not_save_one_time_boundary_settings(self):
+        builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_config_read")
+        model = builder.ModelBuilder(
+            FakeGeneratedApi(), relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules={},
+        )
+        before = model.config()
+        self.assertEqual([0, -1], model.config(rhs=[0, -1])["boundary_conditions"]["rhs"])
+        self.assertEqual(before, model.config())
+        self.assertEqual({}, model.boundary_conditions())
+
+    def test_boundary_conflict_does_not_replace_previous_settings(self):
+        builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_boundary_conflict")
+        relationships = [{
+            "namespace": "volume", "producer": "geometry[*].volume_selection",
+            "consumer": "boundary_conditions.rhs[*].id", "builder_api": "body.rhs",
+            "status": "required",
+        }]
+        model = builder.ModelBuilder(
+            FakeGeneratedApi(), relationships=relationships, selection_helper_rules={},
+        )
+        model.mesh(mesh="part.msh").rhs(value=[0, -1])
+        before = model.config()
+        with self.assertRaises(TypeError):
+            model.boundary_conditions(rhs=[0, -2])
+        self.assertEqual(before, model.config())
+
     def test_model_builder_loads_relationships_from_api_adjacent_manifest(self):
         model_builder = import_from_generator(
             MODEL_BUILDER_PATH,

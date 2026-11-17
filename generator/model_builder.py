@@ -1,6 +1,7 @@
 import json
 import re
 import uuid
+from copy import deepcopy
 from pathlib import Path
 
 from id_relationships import (
@@ -129,28 +130,66 @@ class ModelBuilder:
     def geometry(self):
         return [_payload_dict(item) for item in self._geometry]
 
-    def materials(self):
-        return self._consumer_root_section("materials")
+    def materials(self, value=_MISSING, **kwargs):
+        """Set materials, or return the current materials when called without arguments."""
+        if value is not _MISSING or kwargs:
+            if value is not _MISSING and kwargs:
+                raise TypeError("Use a material value or keyword fields, not both")
+            if value is not _MISSING:
+                items = value if isinstance(value, list) else [value]
+                material = self._api.materials(items)
+            else:
+                material = self._api.materials(**kwargs)
+            return self._set_consumer_section("materials", material)
+        return self._model_section("materials")
 
-    def initial_conditions(self):
-        return self._consumer_root_section("initial_conditions")
+    def initial_conditions(self, **kwargs):
+        if kwargs:
+            value = self._api.initial_conditions(**kwargs)
+            return self._set_consumer_section("initial_conditions", value)
+        return self._model_section("initial_conditions")
 
-    def space(self):
-        return self._consumer_root_section("space")
+    def space(self, **kwargs):
+        if kwargs:
+            return self._set_consumer_section("space", self._api.space(**kwargs))
+        return self._model_section("space")
 
     def boundary_conditions(self, **kwargs):
-        section = dict(kwargs)
-        for key, items in self._consumer_section(("boundary_conditions",)).items():
-            if key == "rhs" and key in section:
+        """Save keyword settings and keep the legacy dictionary return value."""
+        if kwargs:
+            self._set_consumer_section("boundary_conditions", kwargs)
+        return self._model_section("boundary_conditions")
+
+    def _set_consumer_section(self, name, value):
+        payload = value.as_dict() if hasattr(value, "as_dict") else value
+        self._model_section(name, payload)
+        return self._set_config_section(name, deepcopy(payload))
+
+    def _model_section(self, name, explicit=_MISSING):
+        """Combine explicit settings with body settings without discarding either."""
+        bound = self._consumer_root_section(name)
+        if explicit is _MISSING:
+            explicit = self._config_sections.get(name, _MISSING)
+        if explicit is _MISSING:
+            return deepcopy(bound)
+        if not bound:
+            return deepcopy(explicit)
+        if isinstance(explicit, list) and isinstance(bound, list):
+            return deepcopy(explicit + bound)
+        if not isinstance(explicit, dict) or not isinstance(bound, dict):
+            raise ValueError("%s conflicts with body settings; use per-body lists" % name)
+        section = deepcopy(explicit)
+        for key, items in bound.items():
+            if name == "boundary_conditions" and key == "rhs" and key in section:
                 raise TypeError("Use either body.rhs(...) or explicit rhs, not both")
-            if key in section and section[key]:
+            if key in section and section[key] is not None:
                 if not isinstance(section[key], list):
                     raise ValueError(
-                        "boundary_conditions.%s already has a non-list value" % key
+                        "%s.%s already has a non-list value" % (name, key)
                     )
-                section[key] = list(section[key]) + list(items)
+                section[key] = section[key] + deepcopy(items)
             else:
-                section[key] = list(items)
+                section[key] = deepcopy(items)
         return section
 
     def _set_config_section(self, name, value):
@@ -158,10 +197,20 @@ class ModelBuilder:
         return self
 
     def config(self, **kwargs):
+        # Older callers pass the dictionary returned by boundary_conditions().
+        if (
+            "boundary_conditions" in self._config_sections
+            and kwargs.get("boundary_conditions") is not None
+        ):
+            if _payload_dict(kwargs["boundary_conditions"]) == self.boundary_conditions():
+                kwargs.pop("boundary_conditions")
         duplicates = self._config_sections.keys() & kwargs.keys()
         if duplicates:
             raise TypeError("Configuration already set on model: %s" % ", ".join(sorted(duplicates)))
         values = dict(self._config_sections)
+        for name in self._config_consumer_sections:
+            if name in values and name != "boundary_conditions":
+                values[name] = self._model_section(name)
         values.update(kwargs)
         rhs = values.pop("rhs", _MISSING)
         if self._rhs is not _MISSING:
@@ -198,7 +247,7 @@ class ModelBuilder:
             if payload:
                 values[section] = payload
 
-        boundary_conditions = self.boundary_conditions(**boundary_kwargs)
+        boundary_conditions = self._model_section("boundary_conditions", boundary_kwargs)
         if (
             boundary_conditions
             or explicit_boundary is not _MISSING
