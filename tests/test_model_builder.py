@@ -194,6 +194,61 @@ class SelectionPoolTests(unittest.TestCase):
 
 
 class ModelBuilderTests(unittest.TestCase):
+    def test_existing_geometry_rule_ids_are_reserved(self):
+        builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_reserved_ids")
+        model = builder.ModelBuilder(
+            FakeGeneratedApi(), relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
+        )
+        model.mesh(
+            mesh="tagged.msh",
+            volume_selection=[{"id": 4, "axis": 1, "position": 0}],
+            point_selection=[{"id": 8, "box": [[0, 0], [1, 1]]}],
+        )
+        body = model.mesh(mesh="auto.msh")
+        body.material({"type": "NeoHookean", "E": 1000, "nu": 0.3})
+        body.surface_all().dirichlet(value=[0, 0])
+        self.assertGreater(model.geometry()[1]["volume_selection"], 4)
+        self.assertGreater(model.geometry()[1]["surface_selection"], 8)
+
+    def test_repeated_selection_does_not_duplicate_geometry_rules(self):
+        builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_repeat_selection")
+        model = builder.ModelBuilder(
+            FakeGeneratedApi(), relationships=POLYFEM_RELATIONSHIPS,
+            selection_helper_rules=POLYFEM_SELECTION_HELPER_RULES,
+        )
+        body = model.mesh(mesh="part.msh")
+        first = body.surface_axis(axis=1, position=0)
+        second = body.surface_axis(axis=1, position=0)
+        self.assertEqual(first.selection_ref.backend_id, second.selection_ref.backend_id)
+        self.assertEqual(1, len(model.geometry()[0]["surface_selection"]))
+        whole_body = model.mesh(mesh="whole.msh")
+        first = whole_body.dirichlet(value=[0, 0])
+        second = whole_body.surface_all()
+        self.assertEqual(first.selection_ref.backend_id, second.selection_ref.backend_id)
+
+    def test_bind_rejects_foreign_refs_with_a_shared_pool(self):
+        builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_ref_owner")
+        pool = builder.SelectionPool()
+        models = [
+            builder.ModelBuilder(
+                FakeGeneratedApi(), relationships=POLYFEM_RELATIONSHIPS,
+                selection_helper_rules={}, selection_pool=pool,
+            )
+            for _ in range(2)
+        ]
+        foreign = models[0].mesh(mesh="foreign.msh").surface_all()
+        local = models[1].mesh(mesh="local.msh").surface_all()
+        before = models[1].config()
+        with self.assertRaisesRegex(ValueError, "this model"):
+            models[1].bind("surface.dirichlet", foreign.selection_ref, {"value": [1, 0]})
+        self.assertEqual(before, models[1].config())
+        models[1].bind("surface.dirichlet", local.selection_ref, {"value": [0, 0]})
+        self.assertEqual(
+            local.selection_ref.backend_id,
+            models[1].boundary_conditions()["dirichlet_boundary"][0]["id"],
+        )
+
     def test_boundary_settings_persist_and_keep_the_dictionary_api(self):
         builder = import_from_generator(MODEL_BUILDER_PATH, "model_builder_settings")
         model = builder.ModelBuilder(

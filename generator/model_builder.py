@@ -37,6 +37,7 @@ class ModelBuilder:
     ):
         self._api = api_module
         self._selection_pool = selection_pool or SelectionPool()
+        self._selection_refs = {}
         if relationships is None:
             relationships = load_api_adjacent_relationships(api_module)
         if relationships is None:
@@ -99,6 +100,7 @@ class ModelBuilder:
             values["volume_selection"] = same_volume_as.volume_ref.backend_id
 
         geometry_object = getattr(self._api, factory_name)(**values)
+        self._reserve_geometry_ids(_payload_dict(geometry_object))
         if same_volume_as is not None:
             same_volume_as._bind_volume()
         self._geometry.append(geometry_object)
@@ -108,12 +110,9 @@ class ModelBuilder:
                 return ObstacleHandle(self, geometry_object)
             if not isinstance(surface_selection, int) or surface_selection <= 0:
                 return None
-            ref = self._selection_pool.allocate("surface", backend_id=surface_selection)
+            ref = self._allocate_selection("surface", backend_id=surface_selection)
             return SelectionHandle(self, ref)
 
-        surface_selection = values.get("surface_selection")
-        if isinstance(surface_selection, int) and surface_selection > 0:
-            self._selection_pool.allocate("surface", backend_id=surface_selection)
         mesh_uuid = str(uuid.uuid4())
         self._mesh_by_uuid[mesh_uuid] = geometry_object
         volume_selection = values.get("volume_selection")
@@ -122,10 +121,25 @@ class ModelBuilder:
         ):
             return GeometryHandle(self, mesh_uuid)
         # Reserve an ID, but preserve mesh tags until a body-level setting needs it.
-        volume_ref = self._selection_pool.allocate(
+        volume_ref = self._allocate_selection(
             "volume", backend_id=volume_selection, mesh_uuid=mesh_uuid,
         )
         return BodyHandle(self, mesh_uuid, volume_ref)
+
+    def _allocate_selection(self, namespace, **kwargs):
+        ref = self._selection_pool.allocate(namespace, **kwargs)
+        self._selection_refs[ref.uuid] = ref
+        return ref
+
+    def _reserve_geometry_ids(self, geometry):
+        """Keep automatic IDs clear of IDs already present in geometry rules."""
+        for namespace in ("volume", "surface", "point", "curve"):
+            value = geometry.get(namespace + "_selection")
+            items = value if isinstance(value, list) else [value]
+            for item in items:
+                backend_id = item.get("id") if isinstance(item, dict) else item
+                if isinstance(backend_id, int) and not isinstance(backend_id, bool) and backend_id > 0:
+                    self._allocate_selection(namespace, backend_id=backend_id)
 
     def geometry(self):
         return [_payload_dict(item) for item in self._geometry]
@@ -279,7 +293,7 @@ class ModelBuilder:
                     "This mesh already has a partial or file-based surface selection. "
                     "Apply the boundary condition to the selected surface."
                 )
-            ref = self._selection_pool.allocate(
+            ref = self._allocate_selection(
                 "surface",
                 backend_id=current if current is not None and current > 0 else None,
                 mesh_uuid=mesh_uuid,
@@ -323,19 +337,18 @@ class ModelBuilder:
     ):
         values = dict(payload)
         backend_id = values.pop("id", None)
+        if backend_id is None and not append and not values:
+            current = _payload_dict(self._mesh_by_uuid[mesh_uuid]).get(geometry_field)
+            if isinstance(current, int) and current > 0:
+                backend_id = current
         signature = (mesh_uuid, _selection_signature(namespace, values))
         if backend_id is None and signature in self._selection_backend_id_by_signature:
             backend_id = self._selection_backend_id_by_signature[signature]
-        selection_ref = self._selection_pool.allocate(
+        selection_ref = self._allocate_selection(
             namespace,
             backend_id=backend_id,
             mesh_uuid=mesh_uuid,
         )
-        self._selection_backend_id_by_signature.setdefault(
-            signature,
-            selection_ref.backend_id,
-        )
-
         if append or values:
             geometry_payload = {"id": selection_ref.backend_id, **values}
             if geometry_class:
@@ -348,6 +361,10 @@ class ModelBuilder:
             geometry_field,
             geometry_payload,
             append=append,
+        )
+        self._selection_backend_id_by_signature.setdefault(
+            signature,
+            selection_ref.backend_id,
         )
         return SelectionHandle(self, selection_ref)
 
@@ -368,17 +385,23 @@ class ModelBuilder:
             if current is None or current == []:
                 next_value = [_copy_payload(payload)]
             elif isinstance(current, list):
+                if payload in current:
+                    return
                 next_value = list(current) + [_copy_payload(payload)]
             else:
                 raise ValueError("cannot append %s to existing non-list value" % field)
         else:
             if current is not None and current != []:
+                if isinstance(current, int) and isinstance(payload, int) and current == payload:
+                    return
                 raise ValueError("%s already exists for this mesh" % field)
             next_value = payload
 
         _set_payload_field(mesh_object, field, next_value)
 
     def bind(self, builder_api, selection_ref, value):
+        if self._selection_refs.get(selection_ref.uuid) != selection_ref:
+            raise ValueError("selection must belong to this model")
         relationship = self._relationship_for(builder_api)
         if relationship["namespace"] != selection_ref.namespace:
             raise ValueError(
@@ -553,8 +576,8 @@ class BodyHandle:
             self._model._set_mesh_selection_field(self.mesh_uuid, "surface_selection", selection, append=False)
         for boundary_tag in tags:
             if boundary_tag > 0:
-                self._model._selection_pool.allocate("surface", backend_id=boundary_tag)
-        ref = self._model._selection_pool.allocate("surface", backend_id=tag, mesh_uuid=self.mesh_uuid)
+                self._model._allocate_selection("surface", backend_id=boundary_tag)
+        ref = self._model._allocate_selection("surface", backend_id=tag, mesh_uuid=self.mesh_uuid)
         return SelectionHandle(self._model, ref)
 
     def _bind_volume(self):
@@ -604,7 +627,7 @@ class ObstacleHandle:
 
     def surface_all(self):
         if self._surface is None:
-            ref = self._model._selection_pool.allocate("surface")
+            ref = self._model._allocate_selection("surface")
             _set_payload_field(self._geometry, "surface_selection", ref.backend_id)
             self._surface = SelectionHandle(self._model, ref)
         return self._surface
